@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手机上传文件</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            padding: 30px;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        .upload-area {
+            border: 2px dashed #3498db;
+            border-radius: 10px;
+            padding: 40px 20px;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            background: #f8f9fa;
+            border-color: #2980b9;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            color: #3498db;
+            margin-bottom: 15px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .upload-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: 20px;
+        }
+
+        .upload-btn:hover {
+            background: #2980b9;
+        }
+
+        .upload-btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        .file-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #ecf0f1;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .back-btn {
+            margin-top: 20px;
+            background: #95a5a6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>📱 上传打印文件</h1>
+
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📄</div>
+            <p>点击选择文件或拖拽文件到这里</p>
+            <p style="font-size: 12px; color: #7f8c8d; margin-top: 10px;">
+                支持格式: PDF, DOC, DOCX, JPG, PNG, TXT<br>
+                最大大小: 10MB
+            </p>
+        </div>
+
+        <input type="file" id="fileInput" class="file-input" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.txt">
+
+        <div class="file-info" id="fileInfo">
+            <strong>已选择文件:</strong>
+            <span id="fileName"></span>
+            <br>
+            <span id="fileSize"></span>
+        </div>
+
+        <button class="upload-btn" id="uploadBtn" disabled>开始上传</button>
+
+        <div class="status" id="statusMessage"></div>
+
+        <div class="loading" id="loading">
+            <p>正在上传中...</p>
+        </div>
+
+        <a href="/" class="back-btn">返回电脑端</a>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const statusMessage = document.getElementById('statusMessage');
+        const loading = document.getElementById('loading');
+
+        let selectedFile = null;
+
+        // 点击上传区域触发文件选择
+        uploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // 拖拽功能
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.background = '#e8f4fc';
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.style.background = '';
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.style.background = '';
+
+            if (e.dataTransfer.files.length > 0) {
+                handleFileSelect(e.dataTransfer.files[0]);
+            }
+        });
+
+        // 文件选择处理
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            // 检查文件类型
+            const validTypes = [
+                'application/pdf',
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'image/jpeg',
+                'image/png',
+                'text/plain'
+            ];
+
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+            const validExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'txt'];
+
+            if (!validExtensions.includes(fileExtension)) {
+                showStatus('错误: 不支持的文件格式', 'error');
+                return;
+            }
+
+            // 检查文件大小 (10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                showStatus('错误: 文件大小超过10MB限制', 'error');
+                return;
+            }
+
+            selectedFile = file;
+
+            // 显示文件信息
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileInfo.style.display = 'block';
+
+            // 启用上传按钮
+            uploadBtn.disabled = false;
+
+            // 隐藏之前的状态消息
+            hideStatus();
+        }
+
+        // 上传文件 - 修复错误处理
+        uploadBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            loading.style.display = 'block';
+            uploadBtn.disabled = true;
+            hideStatus();
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                // 检查响应状态
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || '上传失败');
+                }
+
+                const result = await response.json();
+                showStatus(`成功: ${result.message}`, 'success');
+
+                // 清空选择
+                selectedFile = null;
+                fileInput.value = '';
+                fileInfo.style.display = 'none';
+                uploadBtn.disabled = true;
+
+            } catch (error) {
+                console.error('上传错误:', error);
+                showStatus(`错误: ${error.message}`, 'error');
+                uploadBtn.disabled = false;
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = `status ${type}`;
+            statusMessage.style.display = 'block';
+        }
+
+        function hideStatus() {
+            statusMessage.style.display = 'none';
+        }
+
+        // 检测是否为移动设备
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        // 如果是电脑访问移动页面，提示用户
+        if (!isMobileDevice()) {
+            showStatus('提示: 这是手机上传页面，建议使用手机扫描二维码访问', 'success');
+        }
+    </script>
+</body>
+
+</html>

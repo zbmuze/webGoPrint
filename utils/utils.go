@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -91,4 +92,125 @@ func CreateDirIfNotExist(dir string) error {
 		return os.MkdirAll(dir, os.ModePerm) // ModePerm：0777（所有权限）
 	}
 	return nil
+}
+
+// AddQueueItem：向数据库添加队列项（对应「文件上传」场景）
+func AddQueueItem(item models.FileInfo) error {
+	global.QueueMutex.Lock()
+	defer global.QueueMutex.Unlock()
+
+	// SQL：插入队列项（status 默认为 'waiting'）
+	sql := `INSERT INTO print_queue (original_name, file_path, file_size, upload_time)
+			VALUES (?, ?, ?, ?);`
+
+	// 执行插入（使用全局 DB 连接）
+	_, err := global.DB.Exec(sql,
+		item.Name,       // original_name
+		item.Path,       // file_path
+		item.Size,       // file_size
+		item.UploadTime, // upload_time
+	)
+	return err
+}
+
+// GetWaitingQueue：从数据库获取「待打印」队列（对应「获取队列」场景）
+func GetWaitingQueue() ([]models.FileInfo, error) {
+	global.QueueMutex.Lock()
+	defer global.QueueMutex.Unlock()
+
+	// SQL：查询 status = 'waiting' 的队列项，按 upload_time 降序（最新在前）
+	sql := `SELECT original_name, file_path, file_size, upload_time 
+			FROM print_queue 
+			WHERE status = 'waiting' 
+			ORDER BY upload_time DESC;`
+
+	// 执行查询
+	rows, err := global.DB.Query(sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() // 确保查询结束后关闭结果集
+
+	// 解析查询结果到切片
+	var queue []models.FileInfo
+	for rows.Next() {
+		var item models.FileInfo
+		err := rows.Scan(
+			&item.Name,       // original_name -> FileInfo.Name
+			&item.Path,       // file_path -> FileInfo.Path
+			&item.Size,       // file_size -> FileInfo.Size
+			&item.UploadTime, // upload_time -> FileInfo.UploadTime
+		)
+		if err != nil {
+			return nil, err
+		}
+		queue = append(queue, item)
+	}
+
+	// 检查行迭代过程中的错误
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return queue, nil
+}
+
+// MarkItemPrinted：将队列项标记为「已打印」（对应「单个文件打印」场景）
+func MarkItemPrinted(originalName string) error {
+	global.QueueMutex.Lock()
+	defer global.QueueMutex.Unlock()
+
+	// 先查询待打印的项是否存在（避免标记不存在的文件）
+	var count int
+	checkSQL := `SELECT COUNT(*) FROM print_queue 
+				WHERE original_name = ? AND status = 'waiting';`
+	err := global.DB.QueryRow(checkSQL, originalName).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("待打印文件不存在")
+	}
+
+	// SQL：更新状态为 'printed'
+	updateSQL := `UPDATE print_queue 
+				 SET status = 'printed' 
+				 WHERE original_name = ? AND status = 'waiting';`
+	_, err = global.DB.Exec(updateSQL, originalName)
+	return err
+}
+
+// MarkAllPrinted：将所有「待打印」项标记为「已打印」（对应「打印全部」场景）
+func MarkAllPrinted() error {
+	global.QueueMutex.Lock()
+	defer global.QueueMutex.Unlock()
+
+	// SQL：批量更新状态
+	sql := `UPDATE print_queue 
+			SET status = 'printed' 
+			WHERE status = 'waiting';`
+	_, err := global.DB.Exec(sql)
+	return err
+}
+
+// ClearWaitingQueue：清空「待打印」队列（对应「清空队列」场景）
+func ClearWaitingQueue() error {
+	global.QueueMutex.Lock()
+	defer global.QueueMutex.Unlock()
+
+	// SQL：删除所有待打印项（也可选择更新状态，根据需求）
+	sql := `DELETE FROM print_queue WHERE status = 'waiting';`
+	_, err := global.DB.Exec(sql)
+	return err
+}
+
+// DeleteAllQueueItems：删除所有队列项（对应「重置系统」场景）
+func DeleteAllQueueItems() error {
+	global.QueueMutex.Lock()
+	defer global.QueueMutex.Unlock()
+
+	// SQL：删除所有记录（包括已打印和待打印）
+	sql := `DELETE FROM print_queue;`
+	_, err := global.DB.Exec(sql)
+	return err
 }

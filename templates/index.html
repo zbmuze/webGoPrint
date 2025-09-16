@@ -397,6 +397,12 @@
             </div>
 
             <div class="print-section">
+                <!-- 新增：手动刷新队列按钮 -->
+                <div style="text-align: right; margin-bottom: 10px;">
+                    <button class="btn btn-primary" id="refreshQueueBtn" style="padding: 6px 12px; font-size: 14px;">
+                        手动刷新队列
+                    </button>
+                </div>
                 <h2 class="section-title">打印队列</h2>
                 <div class="print-queue" id="queue">
                     <div class="status">打印队列为空</div>
@@ -456,7 +462,7 @@
         const notification = document.getElementById('notification');
         const pageSizeSelect = document.getElementById('pageSize');
         const orientationSelect = document.getElementById('orientation');
-
+        const refreshQueueBtn = document.getElementById('refreshQueueBtn');
         // 设置服务器地址
         serverAddress.textContent = window.location.host;
 
@@ -494,6 +500,11 @@
             const ext = filename.split('.').pop().toLowerCase();
             return `file-icon ${ext}`;
         }
+        // 主动触发队列刷新）
+        refreshQueueBtn.addEventListener('click', function () {
+            showNotification('正在刷新队列...', 'warning'); // 提示用户
+            refreshQueue(); // 直接调用函数，主动触发刷新
+        });
 
         // 刷新队列函数
         function refreshQueue() {

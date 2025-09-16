@@ -18,7 +18,12 @@ import (
 
 // GetQueue：获取当前打印队列
 func GetQueue(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"files": global.Queue})
+	queue, err := utils.GetWaitingQueue()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取队列失败：" + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"files": queue})
 }
 
 // HandleUpload：处理文件上传（验证格式、大小，保存文件并加入队列）
@@ -68,8 +73,11 @@ func HandleUpload(c *gin.Context) {
 		UploadTime: time.Now().Format("2006-01-02 15:04:05"),
 		Path:       filePath,
 	}
-	global.Queue = append(global.Queue, fileInfo)
-
+	if err := utils.AddQueueItem(fileInfo); err != nil {
+		os.Remove(filePath) // 数据库插入失败，删除已保存的文件
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加到队列失败：" + err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "文件上传成功", "filename": header.Filename})
 }
 
@@ -82,53 +90,43 @@ func PrintFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效请求参数"})
 		return
 	}
+	// 从数据库获取文件路径（替代原从 global.Queue 查找）
+	queue, err := utils.GetWaitingQueue()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取队列失败：" + err.Error()})
+		return
+	}
 
-	// 1. 从队列中查找文件
 	var filePath string
-	var fileIndex = -1
-	for i, file := range global.Queue {
+	for _, file := range queue {
 		if file.Name == req.Filename {
 			filePath = file.Path
-			fileIndex = i
 			break
 		}
 	}
 
-	// 2. 队列中无文件时，从上传目录查找（并加入队列）
 	if filePath == "" {
-		uploadedFiles, _ := utils.GetUploadedFiles()
-		for _, file := range uploadedFiles {
-			if file.Name == req.Filename {
-				filePath = file.Path
-				global.Queue = append(global.Queue, file)
-				fileIndex = len(global.Queue) - 1
-				break
-			}
-		}
-		if filePath == "" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "文件未找到：" + req.Filename})
-			return
-		}
+		c.JSON(http.StatusNotFound, gin.H{"error": "文件未找到：" + req.Filename})
+		return
 	}
 
-	// 3. 检查文件是否实际存在（避免已删除的情况）
+	// 检查文件是否存在（原有逻辑不变）
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		if fileIndex >= 0 {
-			global.Queue = append(global.Queue[:fileIndex], global.Queue[fileIndex+1:]...) // 从队列移除
-		}
+		// 新增：文件不存在时，从数据库删除该队列项
+		utils.MarkItemPrinted(req.Filename)
 		c.JSON(http.StatusNotFound, gin.H{"error": "文件已被删除"})
 		return
 	}
 
-	// 4. 执行打印命令
+	// 执行打印命令
 	if err := utils.PrintDocument(filePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "打印失败：" + err.Error()})
 		return
 	}
 
-	// 5. 打印成功后从队列移除
-	if fileIndex >= 0 {
-		global.Queue = append(global.Queue[:fileIndex], global.Queue[fileIndex+1:]...)
+	if err := utils.MarkItemPrinted(req.Filename); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新队列状态失败：" + err.Error()})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "打印任务已发送"})
@@ -136,48 +134,63 @@ func PrintFile(c *gin.Context) {
 
 // PrintAll：打印队列中所有文件（打印后清空队列）
 func PrintAll(c *gin.Context) {
-	if len(global.Queue) == 0 {
+	// 获取所有待打印项（替代原 len(global.Queue) == 0）
+	queue, err := utils.GetWaitingQueue()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取队列失败：" + err.Error()})
+		return
+	}
+	if len(queue) == 0 {
 		c.JSON(http.StatusOK, gin.H{"message": "打印队列为空"})
 		return
 	}
 
 	// 打印所有文件（若单个失败则返回错误）
-	for _, file := range global.Queue {
+	for _, file := range queue {
 		if err := utils.PrintDocument(file.Path); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "打印失败：" + err.Error()})
 			return
 		}
 	}
+	// 标记所有为已打印
+	if err := utils.MarkAllPrinted(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新队列状态失败：" + err.Error()})
+		return
+	}
 
-	// 清空队列
-	global.Queue = []models.FileInfo{}
 	c.JSON(http.StatusOK, gin.H{"message": "所有打印任务已发送"})
 }
 
 // ClearQueue：清空打印队列（不删除文件）
 func ClearQueue(c *gin.Context) {
-	global.Queue = []models.FileInfo{}
+	if err := utils.ClearWaitingQueue(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清空队列失败：" + err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "打印队列已清空"})
 }
 
 // ResetSystem：重置系统（清空队列+删除所有上传文件）
 func ResetSystem(c *gin.Context) {
-	// 1. 清空打印队列
-	global.Queue = []models.FileInfo{}
+	// 1. 清空数据库所有队列项（新增）
+	if err := utils.DeleteAllQueueItems(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清空队列失败：" + err.Error()})
+		return
+	}
 
-	// 2. 删除上传目录所有文件（保留目录本身）
+	// 2. 删除上传目录文件（原有逻辑不变）
 	err := filepath.Walk(global.UploadDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() { // 只删除文件，不删除目录
+		if !info.IsDir() {
 			return os.Remove(path)
 		}
 		return nil
 	})
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统重置失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置系统失败：" + err.Error()})
 		return
 	}
 

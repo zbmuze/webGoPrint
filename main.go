@@ -18,7 +18,12 @@ func main() {
 	flag.Parse()
 	global.ServerPort = strconv.Itoa(*port) // 同步到全局配置
 
-	// 2. 获取本机IP（赋值到全局）
+	// 2. 初始化 SQLite 数据库（新增：必须在路由初始化前执行）
+	if err := global.InitSQLite(); err != nil {
+		log.Fatalf("初始化数据库失败：%v", err)
+	}
+	log.Println("SQLite 数据库初始化成功")
+	// 3. 获取本机IP（赋值到全局）
 	ip, err := utils.GetLocalIP()
 	if err != nil {
 		log.Printf("获取本地IP失败: %v", err)
@@ -27,16 +32,16 @@ func main() {
 		global.ServerIP = ip
 	}
 
-	// 3. 创建上传目录（从全局配置读取目录名）
+	// 4. 创建上传目录（从全局配置读取目录名）
 	if err := utils.CreateDirIfNotExist(global.UploadDir); err != nil {
 		log.Fatalf("创建上传目录失败: %v", err)
 	}
 
-	// 4. 初始化Gin引擎 & 注册路由
+	// 5. 初始化Gin引擎 & 注册路由
 	r := gin.Default()
 	routes.InitRouter(r) // 路由逻辑抽离到routes包
 
-	// 5. 启动服务器
+	// 6. 启动服务器
 	listenAddr := fmt.Sprintf("%s:%s", global.ServerIP, global.ServerPort)
 	log.Printf("服务器已启动: http://%s", listenAddr)
 	log.Fatal(r.Run(listenAddr))

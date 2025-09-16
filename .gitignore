@@ -1,2 +1,5 @@
-webprint
 uploads/
+build/
+print_queue.db
+print_server_linux
+print_server.exe

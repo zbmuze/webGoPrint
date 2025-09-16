@@ -10,12 +10,9 @@ import (
 
 // InitRouter：初始化所有路由（接收Gin引擎，注册接口）
 func InitRouter(r *gin.Engine) {
-	// 1. 加载HTML模板（根目录下的templates文件夹）
-	r.LoadHTMLFiles("templates/index.html", "templates/upload.html")
 
-	// 2. 静态文件服务（静态资源、上传文件）
-	r.Static("/static", "./static")                    // 静态资源（CSS/JS等）
-	r.StaticFS("/uploads", http.Dir(global.UploadDir)) // 上传文件访问
+	// 上传文件从本地目录提供访问
+	r.StaticFS("/uploads", http.Dir(global.UploadDir))
 
 	// 3. 页面路由（PC端首页、移动端页面）
 	r.GET("/", handlers.ServeHomePage)         // PC端首页

@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -46,6 +47,11 @@ var (
 )
 
 func main() {
+
+	// 定义命令行参数，默认端口为8080
+	port := flag.Int("p", 8080, "指定服务器监听端口，默认8080")
+	flag.Parse() // 解析命令行参数
+
 	// 获取本机IP地址
 	ip, err := getLocalIP()
 	if err != nil {
@@ -83,8 +89,11 @@ func main() {
 	r.POST("/reset", resetSystem)
 
 	// 启动服务器
-	log.Printf("服务器启动: http://%s:%s", serverIP, serverPort)
-	log.Fatal(r.Run(":" + serverPort))
+	// log.Printf("服务器启动: http://%s:%s", serverIP, serverPort)
+	// 启动服务器，使用命令行指定的端口
+	listenAddr := fmt.Sprintf("%s:%d", serverIP, *port)
+	log.Printf("服务器将在 http://%s 启动...\n", listenAddr)
+	log.Fatal(r.Run(listenAddr))
 }
 
 // 添加移动端页面服务函数

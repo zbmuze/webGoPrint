@@ -49,12 +49,14 @@
             </div>
 
             <div class="print-section">
-                <!-- 新增：手动刷新队列按钮 -->
+                <!-- 手动刷新队列按钮 -->
                 <div style="text-align: right; margin-bottom: 10px;">
                     <button class="btn btn-primary" id="refreshQueueBtn" style="padding: 6px 12px; font-size: 14px;">
                         手动刷新队列
                     </button>
                 </div>
+
+                <!-- 手动刷新队列按钮 -->
                 <h2 class="section-title">打印队列</h2>
                 <div class="print-queue" id="queue">
                     <div class="status">打印队列为空</div>
@@ -62,6 +64,22 @@
 
                 <div class="print-options">
                     <h4>打印设置</h4>
+                    <!-- 自动打印 -->
+                    <div class="option-group">
+                        <label for="autoPrint">自动打印:</label>
+                        <input type="checkbox" id="autoPrint" name="autoPrint" checked>
+                    </div>
+                    <!-- 自动打印 -->
+                    <!-- 打印机选择 -->
+                    <div class="option-group">
+                        <label for="printerSelect">打印机:</label>
+                        <select id="printerSelect">
+                            <option value="">正在加载打印机...</option>
+                        </select>
+                        <button class="btn btn-small" id="refreshPrinters" title="刷新打印机列表">
+                            ↻
+                        </button>
+                    </div>
                     <div class="option-group">
                         <label for="pageSize">纸张大小:</label>
                         <select id="pageSize">
@@ -87,9 +105,8 @@
                 <div class="instructions">
                     <h3>打印说明</h3>
                     <p>系统默认使用A4纸张黑白打印，图片文件会自动转换为PDF格式。</p>
-                    <p>支持的文件格式: PDF, DOC, DOCX, JPG, PNG, TXT</p>
+                    <p>支持的文件格式: PDF, JPG, PNG, TXT</p>
                     <p>最大文件大小: 10MB</p>
-                    <p><strong>注意:</strong> 部分打印机可能无法直接打印图片文件，系统会自动进行格式转换</p>
                 </div>
             </div>
         </div>

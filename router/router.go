@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// InitRouter：初始化所有路由（接收Gin引擎，注册接口）
+// InitRouter 初始化所有路由
 func InitRouter(r *gin.Engine) {
 
 	// 上传文件从本地目录提供访问
@@ -26,4 +26,7 @@ func InitRouter(r *gin.Engine) {
 	r.POST("/print_all", handlers.PrintAll)     // 打印所有文件
 	r.POST("/clear_queue", handlers.ClearQueue) // 清空队列
 	r.POST("/reset", handlers.ResetSystem)      // 重置系统
+
+	r.GET("/get_printers", handlers.GetPrinters) // 获取打印机
+	// r.POST("/merge", handlers.Merge) // 合并PDF
 }

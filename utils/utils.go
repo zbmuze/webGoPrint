@@ -3,7 +3,6 @@ package utils
 import (
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,24 +13,15 @@ import (
 	"strings"
 )
 
-// GetLocalIP：获取本机非loopback IPv4地址
-func GetLocalIP() (string, error) {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return "", err
+// CreateDirIfNotExist 目录不存在则创建（含多级目录）
+func CreateDirIfNotExist(dir string) error {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return os.MkdirAll(dir, os.ModePerm) // ModePerm：0777（所有权限）
 	}
-
-	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil { // 只返回IPv4
-				return ipnet.IP.String(), nil
-			}
-		}
-	}
-	return "", fmt.Errorf("未找到有效IPv4地址")
+	return nil
 }
 
-// FormatFileSize：格式化文件大小（B/KB/MB/GB）
+// FormatFileSize ：格式化文件大小（B/KB/MB/GB）
 func FormatFileSize(size int64) string {
 	const unit = 1024
 	if size < unit {
@@ -45,8 +35,8 @@ func FormatFileSize(size int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
-// PrintDocument：跨平台打印文件（Windows/macOS/Linux）
-func PrintDocument(filePath string) error {
+// PrintDocument ：跨平台打印文件（Windows/macOS/Linux）
+func PrintDocument(filePath string, printer string, pageSize string, orientation string) error {
 	var cmd *exec.Cmd
 	switch strings.ToLower(runtime.GOOS) {
 	case "windows":
@@ -54,12 +44,17 @@ func PrintDocument(filePath string) error {
 	case "darwin": // macOS
 		cmd = exec.Command("lpr", filePath) // macOS打印命令
 	default: // Linux
-		cmd = exec.Command("lp", filePath) // Linux打印命令
+		//   -d <打印机名称>：指定要使用的打印机。
+		//   -n <副本数>：指定打印份数。
+		//   -o <选项>：指定打印选项，如双面打印、彩色打印等。
+		//   -q <队列名称>：将打印任务添加到指定的打印队列。
+		fmt.Printf("打印文件 %s,大小 %s，方向 %s 打印机 %s", filePath, pageSize, orientation, printer)
+		cmd = exec.Command("lp", "-d", "Virtual_PDF_Printer", filePath) // Linux打印命令
 	}
 	return cmd.Run()
 }
 
-// GetUploadedFiles：读取上传目录的所有文件并按时间排序（最新在前）
+// GetUploadedFiles ：读取上传目录的所有文件并按时间排序（最新在前）
 func GetUploadedFiles() ([]models.FileInfo, error) {
 	var files []models.FileInfo
 
@@ -86,15 +81,7 @@ func GetUploadedFiles() ([]models.FileInfo, error) {
 	return files, err
 }
 
-// CreateDirIfNotExist：目录不存在则创建（含多级目录）
-func CreateDirIfNotExist(dir string) error {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, os.ModePerm) // ModePerm：0777（所有权限）
-	}
-	return nil
-}
-
-// AddQueueItem：向数据库添加队列项（对应「文件上传」场景）
+// AddQueueItem ：向数据库添加队列项（对应「文件上传」场景）
 func AddQueueItem(item models.FileInfo) error {
 	global.QueueMutex.Lock()
 	defer global.QueueMutex.Unlock()
@@ -113,7 +100,7 @@ func AddQueueItem(item models.FileInfo) error {
 	return err
 }
 
-// GetWaitingQueue：从数据库获取「待打印」队列（对应「获取队列」场景）
+// GetWaitingQueue ：从数据库获取「待打印」队列（对应「获取队列」场景）
 func GetWaitingQueue() ([]models.FileInfo, error) {
 	global.QueueMutex.Lock()
 	defer global.QueueMutex.Unlock()
@@ -155,7 +142,7 @@ func GetWaitingQueue() ([]models.FileInfo, error) {
 	return queue, nil
 }
 
-// MarkItemPrinted：将队列项标记为「已打印」（对应「单个文件打印」场景）
+// MarkItemPrinted ：将队列项标记为「已打印」（对应「单个文件打印」场景）
 func MarkItemPrinted(originalName string) error {
 	global.QueueMutex.Lock()
 	defer global.QueueMutex.Unlock()
@@ -180,7 +167,33 @@ func MarkItemPrinted(originalName string) error {
 	return err
 }
 
-// MarkAllPrinted：将所有「待打印」项标记为「已打印」（对应「打印全部」场景）
+// UpdateItemStatus  更新状态为打印失败
+func UpdateItemStatus(filename, status, errorMsg string) error {
+	// 更新数据库中的状态
+	global.QueueMutex.Lock()
+	defer global.QueueMutex.Unlock()
+
+	// 先查询待打印的项是否存在（避免标记不存在的文件）
+	var count int
+	checkSQL := `SELECT COUNT(*) FROM print_queue 
+				WHERE original_name = ? AND status = 'waiting';`
+	err := global.DB.QueryRow(checkSQL, filename).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("待打印文件不存在")
+	}
+
+	// SQL：更新状态为 'printed'
+	updateSQL := `UPDATE print_queue 
+				 SET status = 'printed' 
+				 WHERE original_name = ? AND status = 'waiting';`
+	_, err = global.DB.Exec(updateSQL, filename)
+	return err
+}
+
+// MarkAllPrinted ：将所有「待打印」项标记为「已打印」（对应「打印全部」场景）
 func MarkAllPrinted() error {
 	global.QueueMutex.Lock()
 	defer global.QueueMutex.Unlock()
@@ -193,7 +206,7 @@ func MarkAllPrinted() error {
 	return err
 }
 
-// ClearWaitingQueue：清空「待打印」队列（对应「清空队列」场景）
+// ClearWaitingQueue ：清空「待打印」队列（对应「清空队列」场景）
 func ClearWaitingQueue() error {
 	global.QueueMutex.Lock()
 	defer global.QueueMutex.Unlock()
@@ -204,7 +217,7 @@ func ClearWaitingQueue() error {
 	return err
 }
 
-// DeleteAllQueueItems：删除所有队列项（对应「重置系统」场景）
+// DeleteAllQueueItems ：删除所有队列项（对应「重置系统」场景）
 func DeleteAllQueueItems() error {
 	global.QueueMutex.Lock()
 	defer global.QueueMutex.Unlock()

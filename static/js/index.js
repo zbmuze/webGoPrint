@@ -11,6 +11,8 @@ const notification = document.getElementById('notification');
 const pageSizeSelect = document.getElementById('pageSize');
 const orientationSelect = document.getElementById('orientation');
 const refreshQueueBtn = document.getElementById('refreshQueueBtn');
+const printerSelect = document.getElementById('printerSelect');
+
 // 设置服务器地址
 serverAddress.textContent = window.location.host;
 
@@ -115,9 +117,14 @@ function printFile(filename) {
     console.log('尝试打印文件:', filename);
 
     // 获取打印设置
+    const printer = printerSelect.value;
     const pageSize = pageSizeSelect.value;
     const orientation = orientationSelect.value;
 
+    if (!printer) {
+        showNotification('请先选择打印机', 'error');
+        return;
+    }
     // 禁用按钮防止重复点击
     const printBtn = document.querySelector(`.print-btn[data-filename="${filename}"]`);
     if (printBtn) printBtn.disabled = true;
@@ -128,6 +135,7 @@ function printFile(filename) {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+            printer: printer,
             filename: filename,
             pageSize: pageSize,
             orientation: orientation
@@ -156,6 +164,7 @@ function printFile(filename) {
 
 // 打印全部
 printAllBtn.addEventListener('click', function () {
+    const printer = printerSelect.value;
     const pageSize = pageSizeSelect.value;
     const orientation = orientationSelect.value;
 
@@ -165,6 +174,7 @@ printAllBtn.addEventListener('click', function () {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+            printer: printer,
             pageSize: pageSize,
             orientation: orientation
         })
@@ -236,6 +246,72 @@ resetBtn.addEventListener('click', function () {
             });
     }
 });
+
+
+// 打印机管理功能
+document.addEventListener('DOMContentLoaded', function() {
+    const printerSelect = document.getElementById('printerSelect');
+    const refreshPrintersBtn = document.getElementById('refreshPrinters');
+
+    // 加载打印机列表
+    loadPrinters().then(r => {
+        console.log("加载打印机列表完成!!!")
+    });
+
+    // 刷新打印机列表
+    refreshPrintersBtn.addEventListener('click', loadPrinters);
+
+    // 打印机选择变化时保存到本地存储
+    printerSelect.addEventListener('change', function() {
+        localStorage.setItem('selectedPrinter', this.value);
+    });
+});
+
+// 加载打印机列表
+async function loadPrinters() {
+    const printerSelect = document.getElementById('printerSelect');
+    const refreshPrintersBtn = document.getElementById('refreshPrinters');
+
+    try {
+        printerSelect.innerHTML = '<option value="">正在加载打印机...</option>';
+        refreshPrintersBtn.disabled = true;
+
+        const response = await fetch('/get_printers');
+        if (!response.ok) {
+            throw new Error('获取打印机列表失败');
+        }
+
+        const printers = await response.json();
+
+        if (printers.length === 0) {
+            printerSelect.innerHTML = '<option value="">未找到打印机</option>';
+            return;
+        }
+
+        // 清空并填充打印机选项
+        printerSelect.innerHTML = '';
+        printers.forEach(printer => {
+            const option = document.createElement('option');
+            option.value = printer;
+            option.textContent = printer;
+            printerSelect.appendChild(option);
+        });
+
+        // 恢复之前选择的打印机
+        const savedPrinter = localStorage.getItem('selectedPrinter');
+        if (savedPrinter && printers.includes(savedPrinter)) {
+            printerSelect.value = savedPrinter;
+        } else if (printers.length > 0) {
+            printerSelect.value = printers[0];
+        }
+
+    } catch (error) {
+        console.error('加载打印机失败:', error);
+        printerSelect.innerHTML = '<option value="">加载失败，点击刷新</option>';
+    } finally {
+        refreshPrintersBtn.disabled = false;
+    }
+}
 
 // 初始加载
 document.addEventListener('DOMContentLoaded', function () {

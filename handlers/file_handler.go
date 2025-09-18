@@ -3,7 +3,9 @@ package handlers
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,7 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetQueue：获取当前打印队列
+// GetQueue 获取当前打印队列
 func GetQueue(c *gin.Context) {
 	queue, err := utils.GetWaitingQueue()
 	if err != nil {
@@ -26,7 +28,7 @@ func GetQueue(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"files": queue})
 }
 
-// HandleUpload：处理文件上传（验证格式、大小，保存文件并加入队列）
+// HandleUpload 处理文件上传（验证格式、大小，保存文件并加入队列）
 func HandleUpload(c *gin.Context) {
 	// 1. 获取上传文件
 	file, header, err := c.Request.FormFile("file")
@@ -34,12 +36,17 @@ func HandleUpload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "获取文件失败"})
 		return
 	}
-	defer file.Close()
+	defer func(file multipart.File) {
+		err := file.Close()
+		if err != nil {
+			fmt.Printf("file close err: %v\n", err)
+		}
+	}(file)
 
 	// 2. 验证文件格式（对比全局支持的扩展名）
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	if !global.SupportedExt[ext] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的文件格式（仅支持PDF/Word/图片/TXT）"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的文件格式（仅支持PDF/图片/TXT）"})
 		return
 	}
 
@@ -60,19 +67,90 @@ func HandleUpload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
 		return
 	}
-	defer out.Close()
+	defer func(out *os.File) {
+		err := out.Close()
+		if err != nil {
+			fmt.Printf("file close err: %v\n", err)
+		}
+	}(out)
 	if _, err := io.Copy(out, file); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
 		return
 	}
 
-	// 6. 将文件加入打印队列
-	fileInfo := models.FileInfo{
-		Name:       header.Filename, // 显示原始文件名
-		Size:       utils.FormatFileSize(header.Size),
-		UploadTime: time.Now().Format("2006-01-02 15:04:05"),
-		Path:       filePath,
+	isImage := global.ImageExts[ext]
+	var pdfFilePath string
+	if isImage {
+		// 生成PDF文件名
+		pdfFileName := uniqueFileName[:len(uniqueFileName)-len(ext)] + ".pdf"
+		pdfFilePath = filepath.Join(global.UploadDir, pdfFileName)
+
+		// 调用图片转PDF函数
+		if err := utils.ConvertImageToPDF(filePath, pdfFilePath); err != nil {
+			// 转换失败，清理已保存的图片文件并返回错误
+			err := os.Remove(filePath)
+			if err != nil {
+				fmt.Printf("file remove err: %v\n", err)
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "图片转换为PDF失败：" + err.Error()})
+			return
+		}
+		// 转换成功，删除原始图片文件
+		if err := os.Remove(filePath); err != nil {
+			fmt.Printf("删除原始图片文件失败: %v\n", err)
+			// 这里不返回错误，因为PDF已经生成成功
+		}
+		// 更新文件路径为PDF路径
+		filePath = pdfFilePath
+		// 获取PDF文件大小
+		if pdfInfo, err := os.Stat(pdfFilePath); err == nil {
+			header.Size = pdfInfo.Size()
+		}
 	}
+	// 6. 获取打印参数（从表单中获取）
+	printer := c.PostForm("printer")
+	pageSize := c.PostForm("pageSize")
+	orientation := c.PostForm("orientation")
+	autoPrint := c.PostForm("autoPrint") == "true"
+
+	// 设置默认值
+	if pageSize == "" {
+		pageSize = "A4"
+	}
+	if orientation == "" {
+		orientation = "portrait"
+	}
+	fileInfo := models.FileInfo{
+		Name:        header.Filename, // 显示原始文件名
+		Size:        utils.FormatFileSize(header.Size),
+		UploadTime:  time.Now().Format("2006-01-02 15:04:05"),
+		Path:        filePath,
+		Printer:     printer,
+		PageSize:    pageSize,
+		Orientation: orientation,
+		Status:      "waiting", // 等待打印
+	}
+	// 8. 如果启用自动打印，立即执行打印
+	if autoPrint {
+		go func() {
+			// 延迟一下确保数据库事务完成
+			time.Sleep(100 * time.Millisecond)
+
+			if err := utils.PrintDocument(filePath, printer, pageSize, orientation); err != nil {
+				fmt.Printf("自动打印失败: %v\n", err)
+				// 更新状态为打印失败
+				utils.UpdateItemStatus(header.Filename, "failed", err.Error())
+				return
+			}
+
+			// 打印成功，更新状态
+			if err := utils.MarkItemPrinted(header.Filename); err != nil {
+				fmt.Printf("更新打印状态失败: %v\n", err)
+			}
+		}()
+	}
+
 	if err := utils.AddQueueItem(fileInfo); err != nil {
 		os.Remove(filePath) // 数据库插入失败，删除已保存的文件
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加到队列失败：" + err.Error()})
@@ -81,10 +159,13 @@ func HandleUpload(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "文件上传成功", "filename": header.Filename})
 }
 
-// PrintFile：打印单个文件（从队列或上传目录中查找）
+// PrintFile 打印单个文件（从队列或上传目录中查找）
 func PrintFile(c *gin.Context) {
 	var req struct {
-		Filename string `json:"filename"` // 前端传递的原始文件名
+		Filename    string `json:"filename"` // 前端传递的原始文件名
+		Printer     string `json:"printer"`
+		PageSize    string `json:"pageSize"`    // 大小 A4
+		Orientation string `json:"orientation"` // 方向
 	}
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效请求参数"})
@@ -113,13 +194,16 @@ func PrintFile(c *gin.Context) {
 	// 检查文件是否存在（原有逻辑不变）
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		// 新增：文件不存在时，从数据库删除该队列项
-		utils.MarkItemPrinted(req.Filename)
+		err := utils.MarkItemPrinted(req.Filename)
+		if err != nil {
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "文件已被删除"})
 		return
 	}
 
 	// 执行打印命令
-	if err := utils.PrintDocument(filePath); err != nil {
+	if err := utils.PrintDocument(filePath, req.Printer, req.PageSize, req.Orientation); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "打印失败：" + err.Error()})
 		return
 	}
@@ -132,8 +216,17 @@ func PrintFile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "打印任务已发送"})
 }
 
-// PrintAll：打印队列中所有文件（打印后清空队列）
+// PrintAll 打印队列中所有文件（打印后清空队列）
 func PrintAll(c *gin.Context) {
+	var req struct {
+		Printer     string `json:"printer"`
+		PageSize    string `json:"pageSize"`    // 大小 A4
+		Orientation string `json:"orientation"` // 方向
+	}
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效请求参数"})
+		return
+	}
 	// 获取所有待打印项（替代原 len(global.Queue) == 0）
 	queue, err := utils.GetWaitingQueue()
 	if err != nil {
@@ -147,7 +240,7 @@ func PrintAll(c *gin.Context) {
 
 	// 打印所有文件（若单个失败则返回错误）
 	for _, file := range queue {
-		if err := utils.PrintDocument(file.Path); err != nil {
+		if err := utils.PrintDocument(file.Path, req.Printer, req.PageSize, req.Orientation); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "打印失败：" + err.Error()})
 			return
 		}
@@ -161,7 +254,7 @@ func PrintAll(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "所有打印任务已发送"})
 }
 
-// ClearQueue：清空打印队列（不删除文件）
+// ClearQueue 清空打印队列（不删除文件）
 func ClearQueue(c *gin.Context) {
 	if err := utils.ClearWaitingQueue(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "清空队列失败：" + err.Error()})
@@ -170,7 +263,7 @@ func ClearQueue(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "打印队列已清空"})
 }
 
-// ResetSystem：重置系统（清空队列+删除所有上传文件）
+// ResetSystem 重置系统（清空队列+删除所有上传文件）
 func ResetSystem(c *gin.Context) {
 	// 1. 清空数据库所有队列项（新增）
 	if err := utils.DeleteAllQueueItems(); err != nil {

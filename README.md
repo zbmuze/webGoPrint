@@ -4,6 +4,25 @@
 ###### [开源地址](https://gitee.com/li0shang/webGoPrint)
 
 
+-p 端口 【自定义端口】
+
+
+PrintDocument ：跨平台打印文件（Windows/macOS/Linux）
+``` go
+func PrintDocument(filePath string) error {
+    var cmd *exec.Cmd
+    switch strings.ToLower(runtime.GOOS) {
+    case "windows":
+        cmd = exec.Command("print", filePath) // Windows打印命令
+    case "darwin": // macOS
+		cmd = exec.Command("lpr", filePath) // macOS打印命令
+    default: // Linux
+            cmd = exec.Command("lp", filePath) // Linux打印命令
+    }
+    return cmd.Run()
+    }
+```
+
 
 打印队列需要存储「文件核心信息」和「队列状态」，表结构设计如下：
 

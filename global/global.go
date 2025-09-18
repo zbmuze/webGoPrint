@@ -33,7 +33,16 @@ var (
 	QueueMutex sync.Mutex // 并发安全锁（同时保护数据库操作）
 )
 
-var DB *gorm.DB           // 全局数据库连接
+var (
+	// DB 全局数据库连接
+	DB *gorm.DB
+	// Printer 打印机默认
+	Printer     string
+	PageSize    string
+	Orientation string
+	AutoPrint   bool
+)
+
 const DBFile = "print.db" // 数据库文件路径（项目根目录）
 
 // InitSQLite 初始化 SQLite 数据库（创建文件+表）

@@ -28,5 +28,6 @@ func InitRouter(r *gin.Engine) {
 	r.POST("/reset", handlers.ResetSystem)      // 重置系统
 
 	r.GET("/get_printers", handlers.GetPrinters) // 获取打印机
+	r.POST("/setting", handlers.Setting)
 	// r.POST("/merge", handlers.Merge) // 合并PDF
 }

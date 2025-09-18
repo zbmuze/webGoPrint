@@ -54,7 +54,34 @@ function getFileIconClass(filename) {
 refreshQueueBtn.addEventListener('click', function () {
     showNotification('正在刷新队列...', 'warning'); // 提示用户
     refreshQueue(); // 直接调用函数，主动触发刷新
+    refreshSetting();
 });
+
+// 更新设置
+function refreshSetting() {
+    const printer = printerSelect.value;
+    const pageSize = pageSizeSelect.value;
+    const orientation = orientationSelect.value;
+    fetch('/setting',{
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            printer: printer,
+            pageSize: pageSize,
+            orientation: orientation
+        })
+    }).then((response) => {
+        if (!response.ok) {
+            throw new Error('网络响应不正常');
+        }
+        return response.json();
+    }).then(data => {
+        console.log('更新设置:', data);
+        // showNotification(data.message || '打印任务已发送');
+    })
+}
 
 // 刷新队列函数
 function refreshQueue() {
@@ -218,11 +245,7 @@ clearQueueBtn.addEventListener('click', function () {
     }
 });
 
-// 刷新二维码
-generateQRBtn.addEventListener('click', function () {
-    document.getElementById('qrImage').src = '/qrcode?' + new Date().getTime();
-    showNotification('二维码已刷新');
-});
+
 
 // 重置系统
 resetBtn.addEventListener('click', function () {
@@ -313,11 +336,19 @@ async function loadPrinters() {
     }
 }
 
+
+// 刷新二维码
+generateQRBtn.addEventListener('click', function () {
+    document.getElementById('qrImage').src = '/qrcode?' + new Date().getTime();
+    showNotification('二维码已刷新');
+});
 // 初始加载
 document.addEventListener('DOMContentLoaded', function () {
     updateStatus('正在连接...', 'waiting');
     refreshQueue();
+    refreshSetting();
 
-    // 每30秒刷新一次队列
+    // 每30秒刷新一次
     setInterval(refreshQueue, 30000);
+    setInterval(refreshSetting, 30000);
 });

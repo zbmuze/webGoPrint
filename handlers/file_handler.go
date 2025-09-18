@@ -108,36 +108,24 @@ func HandleUpload(c *gin.Context) {
 			header.Size = pdfInfo.Size()
 		}
 	}
-	// 6. 获取打印参数（从表单中获取）
-	printer := c.PostForm("printer")
-	pageSize := c.PostForm("pageSize")
-	orientation := c.PostForm("orientation")
-	autoPrint := c.PostForm("autoPrint") == "true"
 
-	// 设置默认值
-	if pageSize == "" {
-		pageSize = "A4"
-	}
-	if orientation == "" {
-		orientation = "portrait"
-	}
-	fileInfo := models.FileInfo{
-		Name:        header.Filename, // 显示原始文件名
-		Size:        utils.FormatFileSize(header.Size),
-		UploadTime:  time.Now().Format("2006-01-02 15:04:05"),
-		Path:        filePath,
-		Printer:     printer,
-		PageSize:    pageSize,
-		Orientation: orientation,
-		Status:      "waiting", // 等待打印
+	fileInfo := models.PrintQueue{
+		OriginalName: header.Filename, // 显示原始文件名
+		FileSize:     utils.FormatFileSize(header.Size),
+		UploadTime:   time.Now(),
+		FilePath:     filePath,
+		Printer:      global.Printer,
+		PageSize:     global.PageSize,
+		Orientation:  global.Orientation,
+		Status:       "waiting", // 等待打印
 	}
 	// 8. 如果启用自动打印，立即执行打印
-	if autoPrint {
+	if global.AutoPrint {
 		go func() {
 			// 延迟一下确保数据库事务完成
 			time.Sleep(100 * time.Millisecond)
 
-			if err := utils.PrintDocument(filePath, printer, pageSize, orientation); err != nil {
+			if err := utils.PrintDocument(filePath); err != nil {
 				fmt.Printf("自动打印失败: %v\n", err)
 				// 更新状态为打印失败
 				utils.UpdateItemStatus(header.Filename, "failed", err.Error())
@@ -180,8 +168,8 @@ func PrintFile(c *gin.Context) {
 
 	var filePath string
 	for _, file := range queue {
-		if file.Name == req.Filename {
-			filePath = file.Path
+		if file.OriginalName == req.Filename {
+			filePath = file.FilePath
 			break
 		}
 	}
@@ -203,7 +191,7 @@ func PrintFile(c *gin.Context) {
 	}
 
 	// 执行打印命令
-	if err := utils.PrintDocument(filePath, req.Printer, req.PageSize, req.Orientation); err != nil {
+	if err := utils.PrintDocument(filePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "打印失败：" + err.Error()})
 		return
 	}
@@ -240,7 +228,7 @@ func PrintAll(c *gin.Context) {
 
 	// 打印所有文件（若单个失败则返回错误）
 	for _, file := range queue {
-		if err := utils.PrintDocument(file.Path, req.Printer, req.PageSize, req.Orientation); err != nil {
+		if err := utils.PrintDocument(file.FilePath); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "打印失败：" + err.Error()})
 			return
 		}

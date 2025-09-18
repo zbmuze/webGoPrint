@@ -10,6 +10,9 @@ import (
 )
 
 // ConvertImageToPDF 将图片转换为A4尺寸的PDF，保持图片比例并居中显示
+//
+//	imagePath : 输入图片地址
+//	outputPath : 保存PDF地址
 func ConvertImageToPDF(imagePath, outputPath string) error {
 	// 创建PDF实例
 	pdf := gopdf.GoPdf{}

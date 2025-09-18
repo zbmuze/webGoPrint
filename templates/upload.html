@@ -31,6 +31,8 @@
         </div>
 
         <button class="upload-btn" id="uploadBtn" disabled>开始上传</button>
+        <!--   目前是上传自动打印   display: none  -->
+        <button class="upload-btn" id="printBtn" disabled style="display: none">打印</button>
 
         <div class="status" id="statusMessage"></div>
 
@@ -50,8 +52,11 @@
         const fileSize = document.getElementById('fileSize');
         const statusMessage = document.getElementById('statusMessage');
         const loading = document.getElementById('loading');
+        const printBtn = document.getElementById('printBtn');
+
 
         let selectedFile = null;
+        let uploadDone = false;
 
         // 点击上传区域触发文件选择
         uploadArea.addEventListener('click', () => {
@@ -123,7 +128,7 @@
             hideStatus();
         }
 
-        // 上传文件 - 修复错误处理
+        // 上传文件
         uploadBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
 
@@ -154,6 +159,7 @@
                 fileInput.value = '';
                 fileInfo.style.display = 'none';
                 uploadBtn.disabled = true;
+                printBtn.disabled = false;
 
             } catch (error) {
                 console.error('上传错误:', error);
@@ -163,6 +169,40 @@
                 loading.style.display = 'none';
             }
         });
+
+        printBtn.addEventListener('click', async () => {
+            if (!uploadDone) return;
+            loading.style.display = 'block';
+            printBtn.disabled = true;
+            fetch('/print', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: filename,
+                })
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => {
+                            throw new Error(err.error || '打印失败: HTTP ' + response.status)
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('打印响应:', data);
+                    showNotification(data.message || '打印任务已发送');
+                })
+                .catch(error => {
+                    console.error('打印错误详情:', error);
+                    showNotification('打印失败: ' + error.message, 'error');
+                    // 重新启用按钮
+                    if (printBtn) printBtn.disabled = false;
+                });
+
+        })
 
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 B';

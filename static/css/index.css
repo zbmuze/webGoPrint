@@ -189,10 +189,28 @@
         }
 
         .controls {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 20px;
-            gap: 10px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr); /* 2列等宽布局 */
+            gap: 10px; /* 按钮之间的间距 */
+            align-items: center; /* 垂直居中对齐 */
+        }
+        /* 移除按钮原有底部外边距，改用grid的gap控制间距 */
+        .controls > div,
+        .controls > button {
+            padding: 6px 12px;
+            font-size: 14px;
+            margin-bottom: 0 !important;
+        }
+        /* 让按钮在单元格内右对齐（保持原样式的右对齐特性） */
+        .controls > div {
+            justify-self: end;
+        }
+
+        /* 调整按钮大小保持一致（可选，根据需要调整） */
+        .controls .btn {
+            padding: 6px 12px;
+            font-size: 14px;
+            min-width: 120px; /* 确保按钮宽度一致 */
         }
 
         .btn {

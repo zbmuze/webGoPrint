@@ -44,15 +44,13 @@ func GetWaitingQueue() ([]models.PrintQueue, error) {
 	var fileInfos []models.PrintQueue
 	// 直接查询并映射到 FileInfo 结构体
 	result := global.DB.
-		Model(&models.PrintQueue{}).
-		Select("original_name as name, file_path as path, file_size as size, upload_time").
-		Where("status = ?", "waiting").
-		Order("upload_time DESC").
-		Scan(&fileInfos)
+		Model(&models.PrintQueue{}).                                                // 指定操作的模型
+		Select("original_name", "file_path", "file_size", "upload_time", "status"). // 只查需要的字段
+		Order("upload_time DESC").                                                  // 排序
+		Find(&fileInfos)                                                            // 执行查询并将结果填充到 fileInfos
 	if result.Error != nil {
 		return nil, result.Error
 	}
-
 	return fileInfos, nil
 }
 
@@ -84,7 +82,13 @@ func MarkItemPrinted(originalName string) error {
 	return result.Error
 }
 
-// UpdateItemStatus  更新状态为打印失败
+// UpdateItemStatus  更新状态为 status
+//
+//	filename： 文件名称
+//	status：更新成什么状态
+//	errorMsg :目前没用
+//
+// 返回值： 错误信息
 func UpdateItemStatus(filename, status, errorMsg string) error {
 	// 更新数据库中的状态
 	global.QueueMutex.Lock()
@@ -102,7 +106,7 @@ func UpdateItemStatus(filename, status, errorMsg string) error {
 	if count == 0 {
 		return errors.New("待打印文件不存在")
 	}
-	// 更新状态为 'printed'
+	// 更新 original_name = filename 状态为 'printed'
 	result := global.DB.Model(models.PrintQueue{}).
 		Where("original_name = ? AND status = ?", filename, "waiting").
 		Update("status", status)

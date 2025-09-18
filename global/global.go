@@ -31,6 +31,7 @@ var (
 		".webp": true,
 	}
 	QueueMutex sync.Mutex // 并发安全锁（同时保护数据库操作）
+	PrintMutex sync.Mutex // 打印机控制
 )
 
 var (

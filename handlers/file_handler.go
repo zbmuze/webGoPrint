@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,12 +35,7 @@ func HandleUpload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "获取文件失败"})
 		return
 	}
-	defer func(file multipart.File) {
-		err := file.Close()
-		if err != nil {
-			fmt.Printf("file close err: %v\n", err)
-		}
-	}(file)
+	defer file.Close()
 
 	// 2. 验证文件格式（对比全局支持的扩展名）
 	ext := strings.ToLower(filepath.Ext(header.Filename))
@@ -67,12 +61,8 @@ func HandleUpload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
 		return
 	}
-	defer func(out *os.File) {
-		err := out.Close()
-		if err != nil {
-			fmt.Printf("file close err: %v\n", err)
-		}
-	}(out)
+	defer out.Close()
+
 	if _, err := io.Copy(out, file); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
 		return
@@ -88,12 +78,12 @@ func HandleUpload(c *gin.Context) {
 		// 调用图片转PDF函数
 		if err := utils.ConvertImageToPDF(filePath, pdfFilePath); err != nil {
 			// 转换失败，清理已保存的图片文件并返回错误
-			err := os.Remove(filePath)
-			if err != nil {
+			removeErr := os.Remove(filePath)
+			if removeErr != nil {
 				fmt.Printf("file remove err: %v\n", err)
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "图片转换为PDF失败：" + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("图片转换为PDF失败：%v", err)})
 			return
 		}
 		// 转换成功，删除原始图片文件
@@ -121,17 +111,16 @@ func HandleUpload(c *gin.Context) {
 	}
 	// 8. 如果启用自动打印，立即执行打印
 	if global.AutoPrint {
+		// 新开线程
 		go func() {
 			// 延迟一下确保数据库事务完成
 			time.Sleep(100 * time.Millisecond)
-
 			if err := utils.PrintDocument(filePath); err != nil {
 				fmt.Printf("自动打印失败: %v\n", err)
 				// 更新状态为打印失败
-				utils.UpdateItemStatus(header.Filename, "failed", err.Error())
+				_ = utils.UpdateItemStatus(header.Filename, "failed", err.Error())
 				return
 			}
-
 			// 打印成功，更新状态
 			if err := utils.MarkItemPrinted(header.Filename); err != nil {
 				fmt.Printf("更新打印状态失败: %v\n", err)
@@ -140,7 +129,7 @@ func HandleUpload(c *gin.Context) {
 	}
 
 	if err := utils.AddQueueItem(fileInfo); err != nil {
-		os.Remove(filePath) // 数据库插入失败，删除已保存的文件
+		_ = os.Remove(filePath) // 数据库插入失败，删除已保存的文件
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加到队列失败：" + err.Error()})
 		return
 	}
@@ -206,16 +195,6 @@ func PrintFile(c *gin.Context) {
 
 // PrintAll 打印队列中所有文件（打印后清空队列）
 func PrintAll(c *gin.Context) {
-	var req struct {
-		Printer     string `json:"printer"`
-		PageSize    string `json:"pageSize"`    // 大小 A4
-		Orientation string `json:"orientation"` // 方向
-	}
-	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效请求参数"})
-		return
-	}
-	// 获取所有待打印项（替代原 len(global.Queue) == 0）
 	queue, err := utils.GetWaitingQueue()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取队列失败：" + err.Error()})
@@ -258,9 +237,8 @@ func ResetSystem(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "清空队列失败：" + err.Error()})
 		return
 	}
-
 	// 2. 删除上传目录文件（原有逻辑不变）
-	err := filepath.Walk(global.UploadDir, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(global.UploadDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -268,9 +246,7 @@ func ResetSystem(c *gin.Context) {
 			return os.Remove(path)
 		}
 		return nil
-	})
-
-	if err != nil {
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置系统失败：" + err.Error()})
 		return
 	}

@@ -73,6 +73,18 @@ func setupStaticFileService(router *gin.Engine) {
 	}
 	// 提供静态文件服务
 	router.StaticFS("/static", http.FS(staticFS))
+	// 2. 单独配置favicon.ico（浏览器默认请求路径）
+	router.GET("/favicon.ico", func(c *gin.Context) {
+		// 从嵌入的文件中读取static/favicon.ico
+		data, err := embeddedFiles.ReadFile("static/favicon.ico")
+		if err != nil {
+			// 若文件不存在，返回404
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		// 设置正确的MIME类型（必须指定，否则浏览器无法识别）
+		c.Data(http.StatusOK, "image/x-icon", data)
+	})
 }
 
 // 设置模板

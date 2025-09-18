@@ -12,6 +12,8 @@ const pageSizeSelect = document.getElementById('pageSize');
 const orientationSelect = document.getElementById('orientation');
 const refreshQueueBtn = document.getElementById('refreshQueueBtn');
 const printerSelect = document.getElementById('printerSelect');
+const uploadSetBtn = document.getElementById('uploadSetBtn');
+const autoPrintSelect = document.getElementById('autoPrint');
 
 // 设置服务器地址
 serverAddress.textContent = window.location.host;
@@ -54,14 +56,19 @@ function getFileIconClass(filename) {
 refreshQueueBtn.addEventListener('click', function () {
     showNotification('正在刷新队列...', 'warning'); // 提示用户
     refreshQueue(); // 直接调用函数，主动触发刷新
-    refreshSetting();
 });
 
+uploadSetBtn.addEventListener('click', function () {
+    const printerSelect = document.getElementById('printerSelect');
+    showNotification('更新设置...', 'warning'); // 提示用户
+    refreshSetting(printerSelect.value);
+})
 // 更新设置
-function refreshSetting() {
-    const printer = printerSelect.value;
+function refreshSetting(print) {
+    const printer = print;
     const pageSize = pageSizeSelect.value;
     const orientation = orientationSelect.value;
+    const isAutoPrint = autoPrintSelect.checked;
     fetch('/setting',{
         method: 'POST',
         headers: {
@@ -70,7 +77,8 @@ function refreshSetting() {
         body: JSON.stringify({
             printer: printer,
             pageSize: pageSize,
-            orientation: orientation
+            orientation: orientation,
+            isauto: isAutoPrint
         })
     }).then((response) => {
         if (!response.ok) {
@@ -101,10 +109,19 @@ function refreshQueue() {
 
             let queueHTML = '';
             data.files.forEach(file => {
-                const ext = file.name.split('.').pop().toUpperCase();
-                // 安全处理文件名，防止XSS攻击
-                const safeFileName = file.name.replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
-                const iconClass = getFileIconClass(file.name);
+                // 从数据结构中获取正确字段（注意大小写）
+                const fileName = file.OriginalName;
+                const ext = fileName.split('.').pop().toUpperCase();
+                // 安全处理文件名和状态，防止XSS攻击
+                const safeFileName = fileName.replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+                const safeStatus = (file.Status || '').replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
+                const iconClass = getFileIconClass(fileName);
+
+                // 判断是否为已打印状态
+                const isPrinted = safeStatus === 'printed';
+                const buttonText = isPrinted ? '打印完成' : '打印';
+                const buttonDisabled = isPrinted ? 'disabled' : '';
+                const buttonClass = isPrinted ? 'print-btn printed' : 'print-btn';
 
                 queueHTML += `
                         <div class="queue-item">
@@ -112,25 +129,33 @@ function refreshQueue() {
                                 <div class="${iconClass}">${ext}</div>
                                 <div>
                                     <div>${safeFileName}</div>
-                                    <div class="file-details">${file.size} · ${file.upload_time}</div>
+                                    <div class="file-details">
+                                        ${file.FileSize} · ${formatTime(file.UploadTime)}
+                                        ${isPrinted ? '<span class="printed-status">已打印</span>' : ''}
+                                    </div>
                                 </div>
                             </div>
-                            <button class="print-btn" data-filename="${safeFileName}">打印</button>
+                            <button class="${buttonClass}" ${buttonDisabled} data-filename="${safeFileName}">
+                                ${buttonText}
+                            </button>
                         </div>
                     `;
             });
 
             queueContainer.innerHTML = queueHTML;
 
-            // 添加打印按钮事件监听
-            document.querySelectorAll('.print-btn').forEach(btn => {
+            // 只为未打印的文件添加打印事件监听
+            document.querySelectorAll('.print-btn:not(.printed)').forEach(btn => {
                 btn.addEventListener('click', function () {
                     const filename = this.getAttribute('data-filename');
                     printFile(filename);
                 });
             });
 
-            updateStatus(`${data.files.length}个文件等待打印`, 'online');
+            // 统计已打印和待打印数量
+            const printedCount = data.files.filter(file => file.Status === 'printed').length;
+            const pendingCount = data.files.length - printedCount;
+            updateStatus(`${pendingCount}个文件等待打印，${printedCount}个已打印`, 'online');
         })
         .catch(error => {
             console.error('获取队列错误:', error);
@@ -295,38 +320,45 @@ async function loadPrinters() {
     const printerSelect = document.getElementById('printerSelect');
     const refreshPrintersBtn = document.getElementById('refreshPrinters');
 
+    // 检测打印机更改
+    printerSelect.addEventListener('change', function(event) {
+        const selectedValue = event.target.value;
+        refreshSetting(selectedValue);
+    });
+
     try {
-        printerSelect.innerHTML = '<option value="">正在加载打印机...</option>';
-        refreshPrintersBtn.disabled = true;
+    printerSelect.innerHTML = '<option value="">正在加载打印机...</option>';
+    refreshPrintersBtn.disabled = true;
 
-        const response = await fetch('/get_printers');
-        if (!response.ok) {
-            throw new Error('获取打印机列表失败');
-        }
+    const response = await fetch('/get_printers');
+    if (!response.ok) {
+        throw new Error('获取打印机列表失败');
+    }
+    const printers = await response.json();
 
-        const printers = await response.json();
+    if (printers.length === 0) {
+        printerSelect.innerHTML = '<option value="">未找到打印机</option>';
+        return;
+    }
 
-        if (printers.length === 0) {
-            printerSelect.innerHTML = '<option value="">未找到打印机</option>';
-            return;
-        }
+    // 清空并填充打印机选项
+    printerSelect.innerHTML = '';
+    printers.forEach(printer => {
+        const option = document.createElement('option');
+        option.value = printer;
+        option.textContent = printer;
+        printerSelect.appendChild(option);
+    });
 
-        // 清空并填充打印机选项
-        printerSelect.innerHTML = '';
-        printers.forEach(printer => {
-            const option = document.createElement('option');
-            option.value = printer;
-            option.textContent = printer;
-            printerSelect.appendChild(option);
-        });
-
-        // 恢复之前选择的打印机
-        const savedPrinter = localStorage.getItem('selectedPrinter');
-        if (savedPrinter && printers.includes(savedPrinter)) {
-            printerSelect.value = savedPrinter;
-        } else if (printers.length > 0) {
-            printerSelect.value = printers[0];
-        }
+    // 恢复之前选择的打印机
+    const savedPrinter = localStorage.getItem('selectedPrinter');
+    if (savedPrinter && printers.includes(savedPrinter)) {
+        printerSelect.value = savedPrinter;
+    } else if (printers.length > 0) {
+        printerSelect.value = printers[0];
+    }
+    // 更新打印机设置
+    refreshSetting(printerSelect.value)
 
     } catch (error) {
         console.error('加载打印机失败:', error);
@@ -337,6 +369,14 @@ async function loadPrinters() {
 }
 
 
+// 格式化时间显示（将ISO时间转换为更易读的格式）
+function formatTime(isoTime) {
+    if (!isoTime) return '';
+    const date = new Date(isoTime);
+    // 示例格式：2025-09-18 22:48:35
+    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+}
+
 // 刷新二维码
 generateQRBtn.addEventListener('click', function () {
     document.getElementById('qrImage').src = '/qrcode?' + new Date().getTime();
@@ -346,9 +386,9 @@ generateQRBtn.addEventListener('click', function () {
 document.addEventListener('DOMContentLoaded', function () {
     updateStatus('正在连接...', 'waiting');
     refreshQueue();
-    refreshSetting();
+    // refreshSetting();
 
-    // 每30秒刷新一次
-    setInterval(refreshQueue, 30000);
-    setInterval(refreshSetting, 30000);
+    // 每10秒刷新一次
+    setInterval(refreshQueue, 10000);
+    // setInterval(refreshSetting, 30000);
 });

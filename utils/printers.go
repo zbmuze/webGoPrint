@@ -2,7 +2,7 @@ package utils
 
 import (
 	"bytes"
-	"fmt"
+	"log"
 	"os/exec"
 	"print-server/global"
 	"runtime"
@@ -11,19 +11,26 @@ import (
 
 // PrintDocument ：跨平台打印文件（Windows/macOS/Linux）
 func PrintDocument(filePath string) error {
+	global.PrintMutex.Lock()
+	defer global.PrintMutex.Unlock()
+
 	var cmd *exec.Cmd
 	switch strings.ToLower(runtime.GOOS) {
 	case "windows":
 		cmd = exec.Command("print", filePath) // Windows打印命令
-	case "darwin": // macOS
+	case "darwin": // macOS 不支持 自己搞
 		cmd = exec.Command("lpr", filePath) // macOS打印命令
 	default: // Linux
 		//   -d <打印机名称>：指定要使用的打印机。
 		//   -n <副本数>：指定打印份数。
 		//   -o <选项>：指定打印选项，如双面打印、彩色打印等。
 		//   -q <队列名称>：将打印任务添加到指定的打印队列。
-		fmt.Printf("打印文件 %s,大小 %s，方向 %s 打印机 %s", filePath, global.PageSize, global.Orientation, global.Printer)
-		cmd = exec.Command("lp", "-d", "Virtual_PDF_Printer", filePath) // Linux打印命令
+		if *global.Debug {
+			log.Printf("Debug >>>打印文件 %s,大小 %s，方向 %s 打印机 %s", filePath, global.PageSize, global.Orientation, global.Printer)
+			cmd = exec.Command("lp", "-d", "Virtual_PDF_Printer", filePath)
+		} else {
+			cmd = exec.Command("lp", "-d", global.Printer, filePath)
+		}
 	}
 	return cmd.Run()
 }

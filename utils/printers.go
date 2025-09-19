@@ -27,7 +27,7 @@ func PrintDocument(filePath string) error {
 		//   -q <队列名称>：将打印任务添加到指定的打印队列。
 		if *global.Debug {
 			log.Printf("Debug >>>打印文件 %s,大小 %s，方向 %s 打印机 %s", filePath, global.PageSize, global.Orientation, global.Printer)
-			cmd = exec.Command("lp", "-d", "Virtual_PDF_Printer", filePath)
+			cmd = exec.Command("lp", "-d", global.Printer, filePath)
 		} else {
 			cmd = exec.Command("lp", "-d", global.Printer, filePath)
 		}

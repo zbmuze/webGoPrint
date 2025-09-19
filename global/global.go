@@ -17,6 +17,8 @@ var (
 	UploadDir    = "uploads"
 	Debug        *bool
 	ServerIP     string
+	ServerIPv4   string
+	ServerIPv6   string
 	ServerPort   string
 	SupportedExt = map[string]bool{
 		".pdf": true, ".doc": true, ".docx": true,

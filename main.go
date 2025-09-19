@@ -26,17 +26,19 @@ func main() {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
-		// 生产环境的日志配置可能更简洁或输出到文件
 	}
 	// 同步到全局配置
 	global.ServerPort = strconv.Itoa(*port)
 	// 获取本机IP（赋值到全局） GetAllIPInfo 获取公网IP
-	ip, err := utils.GetLocalIP()
+	ips, err := utils.GetAllIPs()
+	//log.Printf("获取本地IPs: %v", ips)
 	if err != nil {
 		log.Printf("获取本地IP失败: %v", err)
 		global.ServerIP = "localhost"
 	} else {
-		global.ServerIP = ip
+		global.ServerIP = ips[0]
+		global.ServerIPv4 = ips[1]
+		global.ServerIPv6 = ips[2]
 	}
 	// 创建上传目录（从全局配置读取目录名）
 	if err := utils.CreateDirIfNotExist(global.UploadDir); err != nil {
@@ -57,7 +59,11 @@ func main() {
 	routes.InitRouter(r)
 	// 启动服务器
 	listenAddr := fmt.Sprintf("%s:%s", global.ServerIP, global.ServerPort)
-	log.Printf("服务器已启动: http://%s", listenAddr)
+	listenAddrv4 := fmt.Sprintf("%s:%s", global.ServerIPv4, global.ServerPort)
+	listenAddrv6 := fmt.Sprintf("[%s]:%s", global.ServerIPv6, global.ServerPort)
+	log.Printf("服务器已启动 局域网: http://%s", listenAddr)
+	log.Printf("服务器已启动 IPv4: http://%s", listenAddrv4)
+	log.Printf("服务器已启动 IPv6: http://%s", listenAddrv6)
 	log.Fatal(r.Run(listenAddr))
 }
 

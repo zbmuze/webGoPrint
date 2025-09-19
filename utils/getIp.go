@@ -6,40 +6,139 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
+// GetAllIPs 获取所有可用IP的调试函数
+func GetAllIPs() ([]string, error) {
+	localip, err := GetLocalIP()
+	ipv4, err := GetPublicIP()
+	ipv6, err := GetPublicIPv6JSON()
+	return []string{localip, ipv4, ipv6}, err
+}
+
 // GetLocalIP ：获取本机非loopback IPv4地址
 func GetLocalIP() (string, error) {
-	addrs, err := net.InterfaceAddrs()
+	interfaces, err := net.Interfaces()
 	if err != nil {
 		return "", err
 	}
 
-	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil { // 只返回IPv4
-				return ipnet.IP.String(), nil
+	// 定义优先级：有线 > 无线 > 其他
+	var ethernetIP, wifiIP, otherIP string
+
+	for _, iface := range interfaces {
+		// 跳过回环接口和未启用的接口
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+				ip := ipnet.IP.String()
+
+				// 过滤虚拟IP和特殊地址
+				if isVirtualIP(ip) {
+					continue
+				}
+
+				// 根据接口类型分类
+				switch getInterfaceType(iface.Name) {
+				case "ethernet":
+					if ethernetIP == "" {
+						ethernetIP = ip
+					}
+				case "wifi":
+					if wifiIP == "" {
+						wifiIP = ip
+					}
+				default:
+					if otherIP == "" {
+						otherIP = ip
+					}
+				}
 			}
 		}
 	}
+
+	// 按优先级返回IP
+	if ethernetIP != "" {
+		return ethernetIP, nil
+	}
+	if wifiIP != "" {
+		return wifiIP, nil
+	}
+	if otherIP != "" {
+		return otherIP, nil
+	}
+
 	return "", fmt.Errorf("未找到有效IPv4地址")
 }
 
-func GetAllIPInfo() (map[string]string, error) {
-	result := make(map[string]string)
+func getInterfaceType(name string) string {
+	name = strings.ToLower(name)
 
-	// 获取公网IPv4
-	if v4, err := GetPublicIP(); err == nil {
-		result["ipv4"] = v4
+	// Windows 接口名称匹配
+	if strings.Contains(name, "ethernet") ||
+		strings.Contains(name, "eth") ||
+		strings.Contains(name, "本地连接") ||
+		strings.Contains(name, "lan") {
+		return "ethernet"
 	}
 
-	// 获取公网IPv6
-	if v6, err := GetPublicIPv6JSON(); err == nil {
-		result["ipv6"] = v6
+	// WiFi 接口名称匹配
+	if strings.Contains(name, "wi-fi") ||
+		strings.Contains(name, "wifi") ||
+		strings.Contains(name, "wireless") ||
+		strings.Contains(name, "wlan") ||
+		strings.Contains(name, "无线网络") {
+		return "wifi"
 	}
 
-	return result, nil
+	// Linux 接口名称匹配
+	if strings.HasPrefix(name, "eth") ||
+		strings.HasPrefix(name, "en") {
+		return "ethernet"
+	}
+	if strings.HasPrefix(name, "wlan") ||
+		strings.HasPrefix(name, "wl") ||
+		strings.HasPrefix(name, "wlp") {
+		return "wifi"
+	}
+
+	return "other"
+}
+
+func isVirtualIP(ip string) bool {
+	// 排除虚拟网络、链路本地、Docker等特殊地址
+	virtualPrefixes := []string{
+		"169.254.", // 链路本地地址 (APIPA)
+		"192.168.100.",
+		"198.18.0.",
+		"192.168.122.",    // libvirt
+		"172.17.",         // Docker默认
+		"172.18.",         // Docker网络
+		"172.19.",         // Docker网络
+		"172.20.",         // Docker网络
+		"10.0.",           // 常见虚拟网络
+		"0.0.0.0",         // 无效地址
+		"255.255.255.255", // 广播地址
+	}
+
+	// 检查私有地址段（但不过滤所有私有地址，因为正常网络也在私有段）
+	for _, prefix := range virtualPrefixes {
+		if strings.HasPrefix(ip, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetPublicIPv6JSON 获取公网IPv6（使用JSON API）

@@ -3,11 +3,12 @@
 
 ###### [开源地址](https://gitee.com/li0shang/webGoPrint)
 
-
 -p 端口 【自定义端口】
 
 
-PrintDocument ：跨平台打印文件（Windows/macOS/Linux）
+
+![](https://gitee.com/li0shang/webGoPrint/raw/main/static/20250919_173954.png)
+
 ``` go
 func PrintDocument(filePath string) error {
     var cmd *exec.Cmd

@@ -13,8 +13,8 @@ import (
 // GetAllIPs 获取所有可用IP的调试函数
 func GetAllIPs() ([]string, error) {
 	localip, err := GetLocalIP()
-	ipv4, err := GetPublicIP()
-	ipv6, err := GetPublicIPv6JSON()
+	ipv4, _ := GetPublicIP()
+	ipv6, _ := GetPublicIPv6JSON()
 	return []string{localip, ipv4, ipv6}, err
 }
 
@@ -166,10 +166,10 @@ func GetPublicIP() (string, error) {
 	// 使用一个提供纯文本IP返回的可靠服务
 	// 常见的选择有：
 	urls := []string{
+		"http://ipinfo.io/ip",
 		"https://api.ipify.org", // 最流行的选择
 		"https://ident.me",
 		"http://myexternalip.com/raw",
-		"http://ipinfo.io/ip",
 	}
 
 	// 为HTTP客户端设置一个合理的超时时间

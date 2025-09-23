@@ -1,17 +1,22 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"print-server/global"
 	routes "print-server/router"
 	"print-server/utils"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,7 +33,7 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	// 同步到全局配置
-	global.ServerPort = strconv.Itoa(*port)
+	global.ServerPort = ":" + strconv.Itoa(*port)
 	// 获取本机IP（赋值到全局） GetAllIPInfo 获取公网IP
 	ips, err := utils.GetAllIPs()
 	//log.Printf("获取本地IPs: %v", ips)
@@ -58,13 +63,45 @@ func main() {
 	// 注册路由
 	routes.InitRouter(r)
 	// 启动服务器
-	listenAddr := fmt.Sprintf("%s:%s", global.ServerIP, global.ServerPort)
-	listenAddrv4 := fmt.Sprintf("%s:%s", global.ServerIPv4, global.ServerPort)
-	listenAddrv6 := fmt.Sprintf("[%s]:%s", global.ServerIPv6, global.ServerPort)
+
+	// 创建自定义的HTTP服务器
+	srv := &http.Server{
+		Addr:    global.ServerPort,
+		Handler: r,
+	}
+	listener, err := net.Listen("tcp", global.ServerPort)
+	if err != nil {
+		log.Fatalf("Failed to create listener: %v", err)
+	}
+	listenAddr := fmt.Sprintf("%s%s", global.ServerIP, global.ServerPort)
+	listenAddrv4 := fmt.Sprintf("%s%s", global.ServerIPv4, global.ServerPort)
+	listenAddrv6 := fmt.Sprintf("[%s]%s", global.ServerIPv6, global.ServerPort)
 	log.Printf("服务器已启动 局域网: http://%s", listenAddr)
 	log.Printf("服务器已启动 IPv4: http://%s", listenAddrv4)
 	log.Printf("服务器已启动 IPv6: http://%s", listenAddrv6)
-	log.Fatal(r.Run(listenAddr))
+	// 在一个新的goroutine中启动服务器
+	go func() {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// 优雅关闭：等待中断信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	<-quit // 阻塞，直到收到中断信号
+
+	log.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server forced to shutdown:", err)
+	}
+	log.Println("Server exited")
+
+	// log.Fatal(r.Run(listenAddr))
 }
 
 //go:embed templates/* static/*

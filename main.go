@@ -23,7 +23,7 @@ import (
 
 func main() {
 	// 默认端口 8080 可以 -p 设置端口
-	port := flag.Int("p", 8080, "指定服务器监听端口,默认8080")
+	port := flag.Int("p", 8080, "指定服务器端口,默认8080")
 	// 默认 release模式 -debug 可查看
 	global.Debug = flag.Bool("debug", false, "启用调试模式")
 	flag.Parse()

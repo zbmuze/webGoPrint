@@ -24,6 +24,7 @@ import (
 func main() {
 	// 默认端口 8080 可以 -p 设置端口
 	port := flag.Int("p", 8080, "指定服务器端口,默认8080")
+	ip := flag.String("ip", "", "指定服务器IP地址,默认自动获取本机IP")
 	// 默认 release模式 -debug 可查看
 	global.Debug = flag.Bool("debug", false, "启用调试模式")
 	flag.Parse()
@@ -34,16 +35,23 @@ func main() {
 	}
 	// 同步到全局配置
 	global.ServerPort = ":" + strconv.Itoa(*port)
-	// 获取本机IP（赋值到全局） GetAllIPInfo 获取公网IP
-	ips, err := utils.GetAllIPs()
-	//log.Printf("获取本地IPs: %v", ips)
-	if err != nil {
-		log.Printf("获取本地IP失败: %v", err)
-		global.ServerIP = "localhost"
+	if ip != nil && *ip != "" {
+		log.Printf("指定了服务器IP地址: %s", *ip)
+		global.ServerIP = *ip
+		return
 	} else {
-		global.ServerIP = ips[0]
-		global.ServerIPv4 = ips[1]
-		global.ServerIPv6 = ips[2]
+		log.Println("未指定服务器IP地址，自动获取本机IP")
+		// 获取本机IP（赋值到全局） GetAllIPInfo 获取公网IP
+		ips, err := utils.GetAllIPs()
+		//log.Printf("获取本地IPs: %v", ips)
+		if err != nil {
+			log.Printf("获取本地IP失败: %v", err)
+			global.ServerIP = "localhost"
+		} else {
+			global.ServerIP = ips[0]
+			global.ServerIPv4 = ips[1]
+			global.ServerIPv6 = ips[2]
+		}
 	}
 	// 创建上传目录（从全局配置读取目录名）
 	if err := utils.CreateDirIfNotExist(global.UploadDir); err != nil {

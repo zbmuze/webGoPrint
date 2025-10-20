@@ -10,18 +10,18 @@ jobs:
   goreleaser:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: 检查代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # 检出完整的提交历史，这对生成变更日志很重要
 
-      - name: Set up Go
+      - name: 设置Go环境
         uses: actions/setup-go@v4
         with:
           go-version: '1.21' # 建议使用您项目所需的Go版本
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v2
+      - name: 运行GoReleaser 编译发布
+        uses: goreleaser/goreleaser-action@v5
         with:
           distribution: goreleaser
           version: latest # 建议固定一个版本，例如 'v1.22.1'

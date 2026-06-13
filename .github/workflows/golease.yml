@@ -3,32 +3,28 @@ name: GoReleaser
 on:
   push:
     tags:
-      - 'v*'
-  workflow_dispatch:
-
-permissions:
-  contents: write  # 添加写入权限
+      - 'v*'  # 仅当推送以'v'开头的标签时触发
+  workflow_dispatch:  # 手动触发时可以使用快照模式
 
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: 检查代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           
-      - name: Set up Go
-        uses: actions/setup-go@v5  # 升级到 v5
+      - name: 设置Go环境
+        uses: actions/setup-go@v4
         with:
-          go-version: '1.23'  # 使用更新的 Go 版本
-          cache: true
+          go-version: '1.21'
           
-      - name: Run GoReleaser
+      - name: 运行GoReleaser 编译发布
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: '~> v2'  # 使用 v2 的最新版本
-          args: release --clean
+          version: '~> v2'
+          args: release --clean --snapshot  # 添加 --snapshot 用于测试
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

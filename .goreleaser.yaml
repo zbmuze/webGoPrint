@@ -14,7 +14,6 @@ builds:
     goarch:
       - amd64
       - arm64
-    # 裁剪二进制体积 + 注入版本号与构建时间
     ldflags:
       - -s -w -X main.version={{ .Version }} -X main.buildTime={{ .Date }}
 
@@ -25,7 +24,6 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
-    # 打包根目录的说明和授权文件
     files:
       - README.md
       - LICENSE
@@ -34,21 +32,15 @@ checksum:
   name_template: 'checksums.txt'
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  version: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
-  filters:
-    exclude:
-      - '^docs:'
-      - '^test:'
-      - '^ci:'
+  exclude:
+    - '^docs:'
+    - '^test:'
+    - '^ci:'
 
 release:
-  github:
-    owner: zbmuze
-    name: print-server
-  # 自动识别预发布版本（版本含 beta/rc/alpha 自动标记为预发布）
   prerelease: auto
-  # 关闭草稿模式，构建完成直接发布
   draft: false

@@ -8,15 +8,14 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"print-server/global"
 	routes "print-server/router"
 	"print-server/utils"
-	"strconv"
-	"syscall"  // ✅ 添加这个导入
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -159,9 +158,10 @@ func setupTemplates(router *gin.Engine) {
 
 // 打印访问地址
 func printAccessAddresses() {
-    log.Println("=" * 50)
+    sep := strings.Repeat("=", 50)
+    log.Println(sep)
     log.Println("✅ 服务器启动成功！")
-    log.Println("=" * 50)
+    log.Println(sep)
     
     if global.ServerIP != "" && global.ServerIP != "localhost" {
         if global.ServerIPv4 != "" && global.ServerIPv4 != "0.0.0.0" {
@@ -174,6 +174,6 @@ func printAccessAddresses() {
     } else {
         log.Printf("📍 访问地址: http://localhost%s", global.ServerPort)
     }
-    log.Println("=" * 50)
+    log.Println(sep)
     log.Println("按 Ctrl+C 停止服务器")
 }

@@ -1,30 +1,43 @@
-name: GoReleaser
+version: 2  # 使用 v2 格式
 
-on:
-  push:
-    tags:
-      - 'v*' # 仅当推送以'v'开头的标签时触发工作流
-  workflow_dispatch: # 允许手动触发工作流
+project_name: print-server
 
-jobs:
-  goreleaser:
-    runs-on: ubuntu-latest
-    steps:
-      - name: 检查代码
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # 检出完整的提交历史，这对生成变更日志很重要
+builds:
+  - main: .
+    binary: print-server
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
 
-      - name: 设置Go环境
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.21' # 建议使用您项目所需的Go版本
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
 
-      - name: 运行GoReleaser 编译发布
-        uses: goreleaser/goreleaser-action@v5
-        with:
-          distribution: goreleaser
-          version: latest # 建议固定一个版本，例如 'v1.22.1'
-          args: release --clean # 清理dist目录
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+
+release:
+  github:
+    owner: yourusername
+    name: print-server
